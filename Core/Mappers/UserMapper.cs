@@ -1,5 +1,4 @@
-﻿// Core/Mappers/UserMapper.cs
-// ...
+﻿
 using AutoMapper;
 using Core.Models.Account;
 using Domain.Entities.Idenity;

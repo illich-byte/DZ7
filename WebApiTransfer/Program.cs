@@ -16,18 +16,12 @@ using WebApiTransfer.Filters;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// ====================================================================
-// КОНФІГУРАЦІЯ БАЗИ ДАНИХ ТА IDENTITY
-// ====================================================================
 
-// 1. Додавання DB Context та підключення Npgsql
 builder.Services.AddDbContext<AppDbTransferContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
-// 2. Налаштування Identity (UserManager, SignInManager, RoleManager)
 builder.Services.AddIdentity<UserEntity, RoleEntity>(options =>
 {
-    // Налаштування вимог до пароля (відповідно до ваших конфігурацій)
     options.Password.RequireDigit = false;
     options.Password.RequireLowercase = false;
     options.Password.RequireUppercase = false;
@@ -37,7 +31,6 @@ builder.Services.AddIdentity<UserEntity, RoleEntity>(options =>
     .AddEntityFrameworkStores<AppDbTransferContext>()
     .AddDefaultTokenProviders();
 
-// 3. Налаштування JWT Bearer аутентифікації
 builder.Services.AddAuthentication(options =>
 {
     options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
@@ -49,8 +42,8 @@ builder.Services.AddAuthentication(options =>
     options.SaveToken = true;
     options.TokenValidationParameters = new TokenValidationParameters
     {
-        ValidateIssuer = false, // (Використовуєте False)
-        ValidateAudience = false, // (Використовуєте False)
+        ValidateIssuer = false,
+        ValidateAudience = false, 
         ValidateIssuerSigningKey = true,
         ValidateLifetime = true,
         ClockSkew = TimeSpan.Zero,
@@ -58,23 +51,18 @@ builder.Services.AddAuthentication(options =>
             Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]))
     };
 });
-//====================================================================
-
-// Щоб отримати доступ до HttpContext в сервісах (потрібно для AuthService)
 builder.Services.AddHttpContextAccessor();
 
 builder.Services.AddControllers();
 
 var assemblyName = typeof(LoginModel).Assembly.GetName().Name;
 
-// Налаштування Swagger (для тестування та документації API)
 builder.Services.AddSwaggerGen(opt =>
 {
     var fileDoc = $"{assemblyName}.xml";
     var filePath = Path.Combine(AppContext.BaseDirectory, fileDoc);
     opt.IncludeXmlComments(filePath);
 
-    // Налаштування Bearer схеми для передачі JWT-токена
     opt.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
         Description = "JWT Authorization header using the Bearer scheme.",
@@ -101,10 +89,6 @@ builder.Services.AddSwaggerGen(opt =>
 
 });
 
-// ====================================================================
-// ?? ЗМІНИ ТУТ: Додано явну політику CORS для використання з UseCors
-// Це не є необхідним, оскільки у вас є app.UseCors нижче, але робить код чистішим.
-// builder.Services.AddCors(); // Ваш оригінальний рядок
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend",
@@ -112,70 +96,42 @@ builder.Services.AddCors(options =>
                           .AllowAnyMethod()
                           .AllowAnyHeader());
 });
-// ====================================================================
 
 builder.Services.AddAutoMapper(AppDomain.CurrentDomain.GetAssemblies());
 
-// ====================================================================
-// РЕЄСТРАЦІЯ СЕРВІСІВ (КЛЮЧОВІ СЕРВІСИ ДЛЯ АУТЕНТИФІКАЦІЇ)
-// ====================================================================
 builder.Services.AddScoped<ICountryService, CountryService>();
 builder.Services.AddScoped<ICityService, CityService>();
 builder.Services.AddScoped<IImageService, ImageService>();
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 
-builder.Services.AddScoped<IAuthService, AuthService>(); // Сервіс для логіки реєстрації/входу
-builder.Services.AddScoped<IUserService, UserService>(); // Сервіс для отримання профілю
-// ====================================================================
+builder.Services.AddScoped<IAuthService, AuthService>(); 
+builder.Services.AddScoped<IUserService, UserService>();
 
 
-// ====================================================================
-// ВАЛІДАЦІЯ ТА ФІЛЬТРИ (FluentValidation)
-// ====================================================================
 builder.Services.Configure<ApiBehaviorOptions>(options =>
 {
     options.SuppressModelStateInvalidFilter = true;
 });
-// Автоматичний пошук та реєстрація валідаторів (включаючи RegisterModelValidator)
 builder.Services.AddValidatorsFromAssemblies(AppDomain.CurrentDomain.GetAssemblies());
 
 builder.Services.AddMvc(options =>
 {
-    // Застосування ValidationFilter для автоматичної обробки валідації
     options.Filters.Add<ValidationFilter>();
 });
-// ====================================================================
 
 
 var app = builder.Build();
-
-// Configure the HTTP request pipeline.
-
-// ====================================================================
-// ВИКОРИСТАННЯ CORS - ВИКОРИСТОВУЄМО ЯВНЕ ІМ'Я ПОЛІТИКИ "AllowFrontend"
-// Зверніть увагу, що ваша попередня конфігурація також працювала б, 
-// але явне використання політики є кращою практикою.
 app.UseCors("AllowFrontend");
-// ====================================================================
 
-
-//if(app.Environment.IsDevelopment())
-//{
 app.UseSwagger();
 app.UseSwaggerUI();
-//}
 
-// ====================================================================
-// ВИКОРИСТАННЯ АУТЕНТИФІКАЦІЇ ТА АВТОРИЗАЦІЇ
-// ====================================================================
 app.UseAuthentication();
 app.UseAuthorization();
-// ====================================================================
 
 
 app.MapControllers();
 
-// Налаштування статичних файлів
 var dirImageName = builder.Configuration
     .GetValue<string>("DirImageName") ?? "duplo";
 
@@ -188,16 +144,12 @@ app.UseStaticFiles(new StaticFileOptions
     RequestPath = $"/{dirImageName}"
 });
 
-// ====================================================================
-// ІНІЦІАЛІЗАЦІЯ БАЗИ ДАНИХ (СТВОРЕННЯ РОЛЕЙ ТА АДМІНА)
-// ====================================================================
 using (var scoped = app.Services.CreateScope())
 {
     var myAppDbContext = scoped.ServiceProvider.GetRequiredService<AppDbTransferContext>();
     var roleManager = scoped.ServiceProvider.GetRequiredService<RoleManager<RoleEntity>>();
-    myAppDbContext.Database.Migrate(); // Застосування міграцій
+    myAppDbContext.Database.Migrate(); 
 
-    // Створення ролей: "User" (потрібна для реєстрації) та "Admin"
     var roles = new[] { "User", "Admin" };
     foreach (var role in roles)
     {
@@ -207,7 +159,6 @@ using (var scoped = app.Services.CreateScope())
         }
     }
 
-    // Створення користувача-адміністратора
     if (!myAppDbContext.Users.Any())
     {
         var userManager = scoped.ServiceProvider
@@ -227,6 +178,5 @@ using (var scoped = app.Services.CreateScope())
         }
     }
 }
-// ====================================================================
 
 app.Run();
