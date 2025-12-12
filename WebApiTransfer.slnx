@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/Frontend/">
+    <File Path="index.html" />
+  </Folder>
+  <Project Path="Core/Core.csproj" />
+  <Project Path="Domain/Domain.csproj" />
+  <Project Path="WebApiTransfer/WebApiTransfer.csproj" />
+</Solution>
