@@ -26,4 +26,14 @@
 		<ProjectReference Include="..\Core\Core.csproj" />
 	</ItemGroup>
 
+	<ItemGroup>
+	  <Folder Include="SeedData\" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <Content Update="SeedData\Cities.json">
+	    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+	  </Content>
+	</ItemGroup>
+
 </Project>

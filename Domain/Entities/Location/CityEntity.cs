@@ -16,7 +16,6 @@ public class CityEntity : BaseEntity<int>
 
     public string? Description { get; set; }
 
-    // Зовнішній ключ на країну
     [ForeignKey(nameof(Country))]
     public int CountryId { get; set; }
 

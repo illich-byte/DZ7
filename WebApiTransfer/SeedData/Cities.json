@@ -1,0 +1,22 @@
+[
+  {
+    "Name": "Київ",
+    "CountryId": 1
+  },
+  {
+    "Name": "Львів",
+    "CountryId": 1
+  },
+  {
+    "Name": "Варшава",
+    "CountryId": 2
+  },
+  {
+    "Name": "Берлін",
+    "CountryId": 3
+  },
+  {
+    "Name": "Париж",
+    "CountryId": 4
+  }
+]

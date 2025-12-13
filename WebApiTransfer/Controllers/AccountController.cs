@@ -13,7 +13,7 @@ public class AccountController(
     UserManager<UserEntity> userManager,
     IUserService userService,
     IJwtTokenService jwtTokenService,
-    IAuthService authService) : ControllerBase // Додано IAuthService
+    IAuthService authService) : ControllerBase 
 {
     /// <summary>
     /// Аутентифікація користувача та видача JWT-токена.

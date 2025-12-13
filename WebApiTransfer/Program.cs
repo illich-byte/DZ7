@@ -2,7 +2,9 @@ using Core.Interfaces;
 using Core.Models.Account;
 using Core.Services;
 using Domain;
+using Domain.Entities;
 using Domain.Entities.Idenity;
+using Domain.Entities.Location; 
 using FluentValidation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
@@ -12,6 +14,7 @@ using Microsoft.Extensions.FileProviders;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using System.Text;
+using System.Text.Json;
 using WebApiTransfer.Filters;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -43,7 +46,7 @@ builder.Services.AddAuthentication(options =>
     options.TokenValidationParameters = new TokenValidationParameters
     {
         ValidateIssuer = false,
-        ValidateAudience = false, 
+        ValidateAudience = false,
         ValidateIssuerSigningKey = true,
         ValidateLifetime = true,
         ClockSkew = TimeSpan.Zero,
@@ -51,8 +54,8 @@ builder.Services.AddAuthentication(options =>
             Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]))
     };
 });
-builder.Services.AddHttpContextAccessor();
 
+builder.Services.AddHttpContextAccessor();
 builder.Services.AddControllers();
 
 var assemblyName = typeof(LoginModel).Assembly.GetName().Name;
@@ -77,16 +80,11 @@ builder.Services.AddSwaggerGen(opt =>
         {
             new OpenApiSecurityScheme
             {
-                Reference = new OpenApiReference
-                {
-                    Type=ReferenceType.SecurityScheme,
-                    Id="Bearer"
-                }
+                Reference = new OpenApiReference { Type=ReferenceType.SecurityScheme, Id="Bearer" }
             },
             new string[]{}
         }
     });
-
 });
 
 builder.Services.AddCors(options =>
@@ -103,10 +101,8 @@ builder.Services.AddScoped<ICountryService, CountryService>();
 builder.Services.AddScoped<ICityService, CityService>();
 builder.Services.AddScoped<IImageService, ImageService>();
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
-
-builder.Services.AddScoped<IAuthService, AuthService>(); 
+builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IUserService, UserService>();
-
 
 builder.Services.Configure<ApiBehaviorOptions>(options =>
 {
@@ -119,22 +115,19 @@ builder.Services.AddMvc(options =>
     options.Filters.Add<ValidationFilter>();
 });
 
-
 var app = builder.Build();
-app.UseCors("AllowFrontend");
 
+
+app.UseCors("AllowFrontend");
 app.UseSwagger();
 app.UseSwaggerUI();
 
 app.UseAuthentication();
 app.UseAuthorization();
 
-
 app.MapControllers();
 
-var dirImageName = builder.Configuration
-    .GetValue<string>("DirImageName") ?? "duplo";
-
+var dirImageName = builder.Configuration.GetValue<string>("DirImageName") ?? "duplo";
 var path = Path.Combine(Directory.GetCurrentDirectory(), dirImageName);
 Directory.CreateDirectory(dirImageName);
 
@@ -144,11 +137,15 @@ app.UseStaticFiles(new StaticFileOptions
     RequestPath = $"/{dirImageName}"
 });
 
+
 using (var scoped = app.Services.CreateScope())
 {
-    var myAppDbContext = scoped.ServiceProvider.GetRequiredService<AppDbTransferContext>();
-    var roleManager = scoped.ServiceProvider.GetRequiredService<RoleManager<RoleEntity>>();
-    myAppDbContext.Database.Migrate(); 
+    var services = scoped.ServiceProvider;
+    var myAppDbContext = services.GetRequiredService<AppDbTransferContext>();
+    var roleManager = services.GetRequiredService<RoleManager<RoleEntity>>();
+    var userManager = services.GetRequiredService<UserManager<UserEntity>>();
+
+    myAppDbContext.Database.Migrate();
 
     var roles = new[] { "User", "Admin" };
     foreach (var role in roles)
@@ -159,17 +156,16 @@ using (var scoped = app.Services.CreateScope())
         }
     }
 
-    if (!myAppDbContext.Users.Any())
+    if (!myAppDbContext.Users.Any(u => u.Email == "admin@gmail.com"))
     {
-        var userManager = scoped.ServiceProvider
-            .GetRequiredService<UserManager<UserEntity>>();
         var adminUser = new UserEntity
         {
             UserName = "admin@gmail.com",
             Email = "admin@gmail.com",
             FirstName = "System",
             LastName = "Administrator",
-            Image = "default.jpg"
+            Image = "default.jpg",
+            EmailConfirmed = true
         };
         var result = await userManager.CreateAsync(adminUser, "Admin123");
         if (result.Succeeded)
@@ -177,6 +173,64 @@ using (var scoped = app.Services.CreateScope())
             await userManager.AddToRoleAsync(adminUser, "Admin");
         }
     }
+
+    await SeedData.SeedAsync(myAppDbContext, userManager);
 }
 
 app.Run();
+
+
+public static class SeedData
+{
+    public static async Task SeedAsync(AppDbTransferContext context, UserManager<UserEntity> userManager)
+    {
+        var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+        var seedDirectory = Path.Combine(Directory.GetCurrentDirectory(), "SeedData");
+
+        if (!Directory.Exists(seedDirectory)) return;
+
+        if (!context.Set<CountryEntity>().Any())
+        {
+            var data = await File.ReadAllTextAsync(Path.Combine(seedDirectory, "Countries.json"));
+            var items = JsonSerializer.Deserialize<List<CountryEntity>>(data, options);
+            if (items != null) { context.Set<CountryEntity>().AddRange(items); await context.SaveChangesAsync(); }
+        }
+
+        if (!context.Set<CityEntity>().Any())
+        {
+            var data = await File.ReadAllTextAsync(Path.Combine(seedDirectory, "Cities.json"));
+            var items = JsonSerializer.Deserialize<List<CityEntity>>(data, options);
+            if (items != null) { context.Set<CityEntity>().AddRange(items); await context.SaveChangesAsync(); }
+        }
+
+        if (!context.Set<TransportationStatusEntity>().Any())
+        {
+            var data = await File.ReadAllTextAsync(Path.Combine(seedDirectory, "FlightStatuses.json"));
+            var items = JsonSerializer.Deserialize<List<TransportationStatusEntity>>(data, options);
+            if (items != null) { context.Set<TransportationStatusEntity>().AddRange(items); await context.SaveChangesAsync(); }
+        }
+
+        if (context.Users.Count() <= 1)
+        {
+            var data = await File.ReadAllTextAsync(Path.Combine(seedDirectory, "Users.json"));
+            var users = JsonSerializer.Deserialize<List<UserEntity>>(data, options);
+            if (users != null)
+            {
+                foreach (var user in users)
+                {
+                    user.UserName = user.Email;
+                    user.EmailConfirmed = true;
+                    await userManager.CreateAsync(user, "User123!");
+                    await userManager.AddToRoleAsync(user, "User");
+                }
+            }
+        }
+
+        if (!context.Set<TransportationEntity>().Any())
+        {
+            var data = await File.ReadAllTextAsync(Path.Combine(seedDirectory, "Flights.json"));
+            var items = JsonSerializer.Deserialize<List<TransportationEntity>>(data, options);
+            if (items != null) { context.Set<TransportationEntity>().AddRange(items); await context.SaveChangesAsync(); }
+        }
+    }
+}
