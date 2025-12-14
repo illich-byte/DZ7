@@ -1,22 +1,27 @@
 [
   {
-    "Name": "Київ",
+    "Name": "РљРёС—РІ",
+    "Slug": "kyiv",      
     "CountryId": 1
   },
   {
-    "Name": "Львів",
+    "Name": "Р›СЊРІС–РІ",
+    "Slug": "lviv",       
     "CountryId": 1
   },
   {
-    "Name": "Варшава",
+    "Name": "Р’Р°СЂС€Р°РІР°",
+    "Slug": "varshava",    
     "CountryId": 2
   },
   {
-    "Name": "Берлін",
+    "Name": "Р‘РµСЂР»С–РЅ",
+    "Slug": "berlin",      
     "CountryId": 3
   },
   {
-    "Name": "Париж",
+    "Name": "РџСЂР°РіР°",
+    "Slug": "praha",        
     "CountryId": 4
   }
 ]

@@ -1,18 +1,26 @@
 [
   {
-    "Name": "Україна",
-    "Code": "UA"
+    "Name": "РЈРєСЂР°С—РЅР°",
+    "Code": "UA",
+    "Slug": "ukraina", 
+    "Image": "ua.png"
   },
   {
-    "Name": "Польща",
-    "Code": "PL"
+    "Name": "РџРѕР»СЊС‰Р°",
+    "Code": "PL",
+    "Slug": "polsha", 
+    "Image": "pl.png"
   },
   {
-    "Name": "Німеччина",
-    "Code": "DE"
+    "Name": "РќС–РјРµС‡С‡РёРЅР°",  
+    "Code": "DE",
+    "Slug": "germany",
+    "Image": "de.png"
   },
   {
-    "Name": "Франція",
-    "Code": "FR"
+    "Name": "Р§РµС…С–СЏ",      
+    "Code": "CZ",
+    "Slug": "czechia",
+    "Image": "cz.png"
   }
 ]

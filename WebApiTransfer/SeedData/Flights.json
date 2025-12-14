@@ -1,16 +1,16 @@
 [
   {
     "FlightNumber": "PS101",
-    "DepartureCityId": 1,
-    "ArrivalCityId": 3,
+    "FromCityId": 1, 
+    "ToCityId": 3, 
     "StatusId": 1,
     "DepartureTime": "2024-05-20T10:00:00",
     "ArrivalTime": "2024-05-20T12:30:00"
   },
   {
     "FlightNumber": "LH2045",
-    "DepartureCityId": 4,
-    "ArrivalCityId": 5,
+    "FromCityId": 4, 
+    "ToCityId": 5, 
     "StatusId": 2,
     "DepartureTime": "2024-05-21T15:00:00",
     "ArrivalTime": "2024-05-21T17:45:00"

@@ -1,12 +1,9 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+﻿using System.Threading.Tasks;
 
 namespace Core.Interfaces
 {
-    internal interface IEmailSender
+    public interface IEmailSender
     {
+        Task SendEmailAsync(string toEmail, string subject, string message);
     }
 }

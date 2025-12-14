@@ -1,10 +1,10 @@
-using Core.Interfaces;
+﻿using Core.Interfaces;
 using Core.Models.Account;
 using Core.Services;
 using Domain;
 using Domain.Entities;
 using Domain.Entities.Idenity;
-using Domain.Entities.Location; 
+using Domain.Entities.Location;
 using FluentValidation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
@@ -16,12 +16,27 @@ using Microsoft.OpenApi.Models;
 using System.Text;
 using System.Text.Json;
 using WebApiTransfer.Filters;
+using System;
+using Core.Interfaces;
+using Core.Services;
+
+// >>> ПОЧАТОК ВИПРАВЛЕННЯ ДАТИ/ЧАСУ ДЛЯ POSTGRES <<<
+// Цей рядок встановлює, що Npgsql повинен розглядати DateTime без вказаної 
+// часової зони (Kind=Unspecified) як UTC. Це вирішує помилку 'timestamp with time zone'.
+AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
+// >>> КІНЕЦЬ ВИПРАВЛЕННЯ ДАТИ/ЧАСУ ДЛЯ POSTGRES <<<
 
 var builder = WebApplication.CreateBuilder(args);
 
-
+// >>> ВИПРАВЛЕННЯ ПОМИЛКИ MIGRATIONS.PendingModelChangesWarning <<<
 builder.Services.AddDbContext<AppDbTransferContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+{
+    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection"));
+    // Додаємо цю конфігурацію, щоб ігнорувати попередження про незавершені зміни моделі
+    options.ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning));
+});
+// >>> КІНЕЦЬ ВИПРАВЛЕННЯ ПОМИЛКИ MIGRATIONS.PendingModelChangesWarning <<<
+
 
 builder.Services.AddIdentity<UserEntity, RoleEntity>(options =>
 {
@@ -31,8 +46,8 @@ builder.Services.AddIdentity<UserEntity, RoleEntity>(options =>
     options.Password.RequiredLength = 6;
     options.Password.RequireNonAlphanumeric = false;
 })
-    .AddEntityFrameworkStores<AppDbTransferContext>()
-    .AddDefaultTokenProviders();
+.AddEntityFrameworkStores<AppDbTransferContext>()
+.AddDefaultTokenProviders();
 
 builder.Services.AddAuthentication(options =>
 {
@@ -51,7 +66,7 @@ builder.Services.AddAuthentication(options =>
         ValidateLifetime = true,
         ClockSkew = TimeSpan.Zero,
         IssuerSigningKey = new SymmetricSecurityKey(
-            Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]))
+    Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]))
     };
 });
 
@@ -76,23 +91,23 @@ builder.Services.AddSwaggerGen(opt =>
     });
 
     opt.AddSecurityRequirement(new OpenApiSecurityRequirement
-    {
-        {
-            new OpenApiSecurityScheme
-            {
-                Reference = new OpenApiReference { Type=ReferenceType.SecurityScheme, Id="Bearer" }
-            },
-            new string[]{}
-        }
-    });
+{
+{
+new OpenApiSecurityScheme
+{
+Reference = new OpenApiReference { Type=ReferenceType.SecurityScheme, Id="Bearer" }
+},
+new string[]{}
+}
+});
 });
 
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend",
-        builder => builder.AllowAnyOrigin()
-                          .AllowAnyMethod()
-                          .AllowAnyHeader());
+    builder => builder.AllowAnyOrigin()
+    .AllowAnyMethod()
+    .AllowAnyHeader());
 });
 
 builder.Services.AddAutoMapper(AppDomain.CurrentDomain.GetAssemblies());
@@ -103,6 +118,7 @@ builder.Services.AddScoped<IImageService, ImageService>();
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IUserService, UserService>();
+builder.Services.AddScoped<IEmailSender, EmailSender>();
 
 builder.Services.Configure<ApiBehaviorOptions>(options =>
 {
@@ -137,14 +153,17 @@ app.UseStaticFiles(new StaticFileOptions
     RequestPath = $"/{dirImageName}"
 });
 
-
 using (var scoped = app.Services.CreateScope())
 {
     var services = scoped.ServiceProvider;
     var myAppDbContext = services.GetRequiredService<AppDbTransferContext>();
     var roleManager = services.GetRequiredService<RoleManager<RoleEntity>>();
     var userManager = services.GetRequiredService<UserManager<UserEntity>>();
+    var emailSender = services.GetRequiredService<IEmailSender>();
 
+    // 🛑 ВИПРАВЛЕННЯ: Скидаємо базу даних, щоб уникнути конфлікту "relation tblCountries already exists"
+    // який був спричинений попереднім запуском EnsureCreatedAsync()
+    await myAppDbContext.Database.EnsureDeletedAsync();
     myAppDbContext.Database.Migrate();
 
     var roles = new[] { "User", "Admin" };
@@ -156,9 +175,11 @@ using (var scoped = app.Services.CreateScope())
         }
     }
 
+    UserEntity adminUser = null;
+
     if (!myAppDbContext.Users.Any(u => u.Email == "admin@gmail.com"))
     {
-        var adminUser = new UserEntity
+        adminUser = new UserEntity
         {
             UserName = "admin@gmail.com",
             Email = "admin@gmail.com",
@@ -173,8 +194,31 @@ using (var scoped = app.Services.CreateScope())
             await userManager.AddToRoleAsync(adminUser, "Admin");
         }
     }
+    else
+    {
+        adminUser = await userManager.FindByEmailAsync("admin@gmail.com");
+    }
+
 
     await SeedData.SeedAsync(myAppDbContext, userManager);
+
+    if (adminUser != null)
+    {
+        var subject = "Успішний запуск сайту TransferApp";
+        var body = $"<h1>Привіт, {adminUser.FirstName}!</h1><p>Сайт ASP.NET Core TransferApp успішно запущено в мережі.</p><p>Час запуску: {DateTime.Now}</p>";
+
+        try
+        {
+            await emailSender.SendEmailAsync(adminUser.Email, subject, body);
+            Console.WriteLine($"[EMAIL] Повідомлення про запуск успішно надіслано на {adminUser.Email}");
+        }
+        catch (Exception ex)
+        {
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.WriteLine($"[EMAIL ERROR] Помилка при надсиланні email: {ex.Message}");
+            Console.ResetColor();
+        }
+    }
 }
 
 app.Run();
@@ -226,11 +270,5 @@ public static class SeedData
             }
         }
 
-        if (!context.Set<TransportationEntity>().Any())
-        {
-            var data = await File.ReadAllTextAsync(Path.Combine(seedDirectory, "Flights.json"));
-            var items = JsonSerializer.Deserialize<List<TransportationEntity>>(data, options);
-            if (items != null) { context.Set<TransportationEntity>().AddRange(items); await context.SaveChangesAsync(); }
-        }
     }
 }
