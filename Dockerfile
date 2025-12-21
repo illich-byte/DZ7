@@ -1,37 +1,39 @@
-# Етап збірки (SDK)
+# Етап 1: SDK для збірки
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
 
-# Копіюємо файли проектів для відновлення залежностей
+# Копіюємо файли проектів (ВАЖЛИВО: назви мають точно збігатися з репозиторієм)
 COPY ["WebApiTransfer/WebApiTransfer.csproj", "WebApiTransfer/"]
 COPY ["Core/Core.csproj", "Core/"]
 COPY ["Domain/Domain.csproj", "Domain/"]
 
-# Відновлюємо NuGet пакети
+# Відновлюємо залежності
 RUN dotnet restore "WebApiTransfer/WebApiTransfer.csproj"
 
-# Копіюємо весь інший код
+# Копіюємо решту файлів (включаючи index.html з кореня)
 COPY . .
 
-# Збираємо основний проект
+# Збираємо проект
 WORKDIR "/src/WebApiTransfer"
 RUN dotnet build "WebApiTransfer.csproj" -c Release -o /app/build
 
-# Публікуємо проект
+# Публікуємо
 FROM build AS publish
 RUN dotnet publish "WebApiTransfer.csproj" -c Release -o /app/publish /p:UseAppHost=false
 
-# Фінальний образ (Runtime)
+# Етап 2: Runtime (фінальний образ)
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final
 WORKDIR /app
-# Важливо: .NET 8 за замовчуванням використовує порт 8080
 EXPOSE 8080
+
+# Встановлюємо порт для .NET
 ENV ASPNETCORE_URLS=http://+:8080
 
+# Копіюємо зібраний бекенд
 COPY --from=publish /app/publish .
 
-# Якщо хочете, щоб index.html був доступний через бекенд, 
-# він має лежати в папці wwwroot (якщо бекенд налаштований на static files)
-COPY ../index.html ./wwwroot/ 
+# Копіюємо ваш index.html (фронтенд) у папку для статичних файлів
+# (Він лежить у корені /src, тому використовуємо шлях із етапу build)
+COPY --from=build /src/index.html ./wwwroot/index.html
 
 ENTRYPOINT ["dotnet", "WebApiTransfer.dll"]
