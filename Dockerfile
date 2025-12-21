@@ -1,19 +1,19 @@
-# Етап 1: SDK для збірки
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+# Використовуємо SDK версії 9.0 для збірки
+FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
 WORKDIR /src
 
-# Копіюємо файли проектів (ВАЖЛИВО: назви мають точно збігатися з репозиторієм)
+# Копіюємо файли проєктів
 COPY ["WebApiTransfer/WebApiTransfer.csproj", "WebApiTransfer/"]
 COPY ["Core/Core.csproj", "Core/"]
 COPY ["Domain/Domain.csproj", "Domain/"]
 
-# Відновлюємо залежності
+# Відновлюємо залежності (тепер SDK 9.0 зрозуміє ваші проєкти)
 RUN dotnet restore "WebApiTransfer/WebApiTransfer.csproj"
 
-# Копіюємо решту файлів (включаючи index.html з кореня)
+# Копіюємо решту коду
 COPY . .
 
-# Збираємо проект
+# Збираємо
 WORKDIR "/src/WebApiTransfer"
 RUN dotnet build "WebApiTransfer.csproj" -c Release -o /app/build
 
@@ -21,19 +21,17 @@ RUN dotnet build "WebApiTransfer.csproj" -c Release -o /app/build
 FROM build AS publish
 RUN dotnet publish "WebApiTransfer.csproj" -c Release -o /app/publish /p:UseAppHost=false
 
-# Етап 2: Runtime (фінальний образ)
-FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final
+# Використовуємо Runtime версії 9.0 для запуску
+FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS final
 WORKDIR /app
 EXPOSE 8080
 
-# Встановлюємо порт для .NET
+# ВАЖЛИВО для .NET 9: вказуємо порт
 ENV ASPNETCORE_URLS=http://+:8080
 
-# Копіюємо зібраний бекенд
 COPY --from=publish /app/publish .
 
-# Копіюємо ваш index.html (фронтенд) у папку для статичних файлів
-# (Він лежить у корені /src, тому використовуємо шлях із етапу build)
+# Копіюємо фронтенд
 COPY --from=build /src/index.html ./wwwroot/index.html
 
 ENTRYPOINT ["dotnet", "WebApiTransfer.dll"]
