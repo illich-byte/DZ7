@@ -1,69 +1,24 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="uk">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Вхід, Реєстрація та Профіль</title>
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            padding: 20px;
-        }
-
-        .container {
-            max-width: 400px;
-            margin: 0 auto;
-            border: 1px solid #ccc;
-            padding: 20px;
-            border-radius: 5px;
-        }
-
-        h2 {
-            text-align: center;
-        }
-
-        label {
-            display: block;
-            margin-top: 10px;
-        }
-
-        input[type="email"], input[type="password"], input[type="text"] {
-            width: 100%;
-            padding: 8px;
-            margin-top: 5px;
-            box-sizing: border-box;
-        }
-
-        button {
-            margin-top: 15px;
-            padding: 10px 15px;
-            background-color: #007bff;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-        }
-
-            button:hover {
-                background-color: #0056b3;
-            }
-
-        .message {
-            margin-top: 15px;
-            padding: 10px;
-            border-radius: 4px;
-            background-color: #e9ecef;
-        }
-
-        .hidden {
-            display: none;
-        }
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .container { max-width: 400px; margin: 0 auto; border: 1px solid #ccc; padding: 20px; border-radius: 5px; }
+        h2 { text-align: center; }
+        label { display: block; margin-top: 10px; }
+        input[type="email"], input[type="password"], input[type="text"] { width: 100%; padding: 8px; margin-top: 5px; box-sizing: border-box; }
+        button { margin-top: 15px; padding: 10px 15px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background-color: #0056b3; }
+        .message { margin-top: 15px; padding: 10px; border-radius: 4px; background-color: #e9ecef; }
+        .hidden { display: none; }
     </style>
 </head>
 <body>
 
     <div class="container">
-
         <div id="auth-buttons">
             <button onclick="showSection('login')">Вхід</button>
             <button onclick="showSection('register')">Реєстрація</button>
@@ -78,10 +33,8 @@
             <form id="login-form">
                 <label for="loginEmail">Email:</label>
                 <input type="email" id="loginEmail" required value="admin@gmail.com">
-
                 <label for="loginPassword">Пароль:</label>
-                <input type="password" id="loginPassword" required value="Admin123">
-
+                <input type="password" id="loginPassword" required value="Admin123!">
                 <button type="submit">Увійти</button>
             </form>
         </div>
@@ -91,16 +44,12 @@
             <form id="register-form">
                 <label for="regEmail">Email:</label>
                 <input type="email" id="regEmail" required>
-
                 <label for="regFirstName">Ім'я:</label>
                 <input type="text" id="regFirstName">
-
                 <label for="regPassword">Пароль (мін. 6):</label>
                 <input type="password" id="regPassword" required>
-
                 <label for="regConfirmPassword">Повторний пароль:</label>
                 <input type="password" id="regConfirmPassword" required>
-
                 <button type="submit">Зареєструватися</button>
             </form>
         </div>
@@ -113,13 +62,12 @@
             <p><strong>Прізвище:</strong> <span id="profileLastName"></span></p>
             <p><strong>Статус:</strong> <span id="profileStatus">Аутентифіковано</span></p>
         </div>
-
     </div>
 
     <script>
-        // ВИПРАВЛЕНО: Залишено одне оголошення змінної API_URL
-        // Порт встановлено на 5055, як у вашому останньому коді.
-        const API_URL = 'http://46.200.7.215:5055/api/Account/';
+        // ВИПРАВЛЕНО: Використовуємо відносний шлях. 
+        // Це автоматично підставить домен Koyeb та HTTPS протокол.
+        const API_URL = window.location.origin + '/api/Account/';
 
         // --- ДОПОМІЖНІ ФУНКЦІЇ ---
 
@@ -174,29 +122,29 @@
                 headers['Authorization'] = `Bearer ${token}`;
             }
 
-            const response = await fetch(API_URL + endpoint, {
-                method: method,
-                headers: headers,
-                body: body ? JSON.stringify(body) : null
-            });
+            try {
+                const response = await fetch(API_URL + endpoint, {
+                    method: method,
+                    headers: headers,
+                    body: body ? JSON.stringify(body) : null
+                });
 
-            if (response.ok) {
-                return response.json();
-            } else {
-                // Обробка помилок (наприклад, 400 Bad Request або 401 Unauthorized)
-                let errorMessage = response.statusText;
-
-                try {
-                    const errorData = await response.json();
-                    // Спроба отримати більш детальну помилку
-                    errorMessage = errorData.error || errorData.Error || errorData.message || response.statusText;
-                } catch (e) {
-                    // Якщо відповідь не є JSON
-                    errorMessage = `Помилка сервера: ${response.statusText}`;
+                if (response.ok) {
+                    return response.json();
+                } else {
+                    let errorMessage = response.statusText;
+                    try {
+                        const errorData = await response.json();
+                        errorMessage = errorData.error || errorData.message || response.statusText;
+                    } catch (e) {
+                        errorMessage = `Помилка сервера: ${response.status}`;
+                    }
+                    showMessage(`Помилка: ${errorMessage}`, true);
+                    throw new Error(errorMessage);
                 }
-
-                showMessage(`Помилка (${response.status}): ${errorMessage}`, true);
-                throw new Error(errorMessage);
+            } catch (err) {
+                showMessage("Не вдалося з'єднатися з сервером. Перевірте HTTPS.", true);
+                throw err;
             }
         }
 
@@ -208,8 +156,10 @@
 
             try {
                 const data = await apiCall('Login', 'POST', { email, password });
-                setToken(data.token);
-                showMessage("Успішний вхід!");
+                if (data.token) {
+                    setToken(data.token);
+                    showMessage("Успішний вхід!");
+                }
             } catch (error) {
                 console.error("Login failed:", error);
             }
@@ -236,28 +186,24 @@
         async function fetchProfile() {
             try {
                 const profile = await apiCall('GetProfile', 'GET', null, true);
-
                 document.getElementById('profileId').textContent = profile.id;
                 document.getElementById('profileEmail').textContent = profile.email;
                 document.getElementById('profileFirstName').textContent = profile.firstName || "Не вказано";
                 document.getElementById('profileLastName').textContent = profile.lastName || "Не вказано";
-
             } catch (error) {
-                if (error.message.includes("Unauthorized")) {
+                if (error.message.includes("Unauthorized") || error.message.includes("401")) {
                     logout();
                 }
                 console.error("Fetch profile failed:", error);
             }
         }
 
-        // 4. ЛОГІКА ВИХОДУ
         function logout() {
             localStorage.removeItem('authToken');
-            showMessage("Ви успішно вийшли з системи.");
+            showMessage("Ви вийшли з системи.");
             showSection('login');
         }
 
-        // Ініціалізація
         window.onload = () => {
             if (getToken()) {
                 showSection('profile');
@@ -265,7 +211,6 @@
                 showSection('login');
             }
         };
-
     </script>
 </body>
 </html>
