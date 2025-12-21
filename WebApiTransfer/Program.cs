@@ -1,4 +1,4 @@
-﻿using Core.Interfaces;
+using Core.Interfaces;
 using Core.Models.Account;
 using Core.Services;
 using Domain;
@@ -16,28 +16,20 @@ using Microsoft.OpenApi.Models;
 using System.Text;
 using System.Text.Json;
 using WebApiTransfer.Filters;
-using System;
-using Core.Interfaces;
-using Core.Services;
 
-// >>> ПОЧАТОК ВИПРАВЛЕННЯ ДАТИ/ЧАСУ ДЛЯ POSTGRES <<<
-// Цей рядок встановлює, що Npgsql повинен розглядати DateTime без вказаної 
-// часової зони (Kind=Unspecified) як UTC. Це вирішує помилку 'timestamp with time zone'.
+// Виправлення для Postgres (UTC)
 AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
-// >>> КІНЕЦЬ ВИПРАВЛЕННЯ ДАТИ/ЧАСУ ДЛЯ POSTGRES <<<
 
 var builder = WebApplication.CreateBuilder(args);
 
-// >>> ВИПРАВЛЕННЯ ПОМИЛКИ MIGRATIONS.PendingModelChangesWarning <<<
+// Налаштування БД
 builder.Services.AddDbContext<AppDbTransferContext>(options =>
 {
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection"));
-    // Додаємо цю конфігурацію, щоб ігнорувати попередження про незавершені зміни моделі
     options.ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning));
 });
-// >>> КІНЕЦЬ ВИПРАВЛЕННЯ ПОМИЛКИ MIGRATIONS.PendingModelChangesWarning <<<
 
-
+// Налаштування Identity
 builder.Services.AddIdentity<UserEntity, RoleEntity>(options =>
 {
     options.Password.RequireDigit = false;
@@ -49,6 +41,7 @@ builder.Services.AddIdentity<UserEntity, RoleEntity>(options =>
 .AddEntityFrameworkStores<AppDbTransferContext>()
 .AddDefaultTokenProviders();
 
+// Налаштування JWT
 builder.Services.AddAuthentication(options =>
 {
     options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
@@ -65,21 +58,20 @@ builder.Services.AddAuthentication(options =>
         ValidateIssuerSigningKey = true,
         ValidateLifetime = true,
         ClockSkew = TimeSpan.Zero,
-        IssuerSigningKey = new SymmetricSecurityKey(
-    Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]))
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"] ?? "DefaultSecretKey1234567890"))
     };
 });
 
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddControllers();
 
+// Swagger
 var assemblyName = typeof(LoginModel).Assembly.GetName().Name;
-
 builder.Services.AddSwaggerGen(opt =>
 {
     var fileDoc = $"{assemblyName}.xml";
     var filePath = Path.Combine(AppContext.BaseDirectory, fileDoc);
-    opt.IncludeXmlComments(filePath);
+    if (File.Exists(filePath)) opt.IncludeXmlComments(filePath);
 
     opt.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
@@ -91,27 +83,23 @@ builder.Services.AddSwaggerGen(opt =>
     });
 
     opt.AddSecurityRequirement(new OpenApiSecurityRequirement
-{
-{
-new OpenApiSecurityScheme
-{
-Reference = new OpenApiReference { Type=ReferenceType.SecurityScheme, Id="Bearer" }
-},
-new string[]{}
-}
-});
+    {
+        {
+            new OpenApiSecurityScheme { Reference = new OpenApiReference { Type=ReferenceType.SecurityScheme, Id="Bearer" } },
+            new string[]{}
+        }
+    });
 });
 
+// CORS
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend",
-    builder => builder.AllowAnyOrigin()
-    .AllowAnyMethod()
-    .AllowAnyHeader());
+        policy => policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader());
 });
 
+// Services
 builder.Services.AddAutoMapper(AppDomain.CurrentDomain.GetAssemblies());
-
 builder.Services.AddScoped<ICountryService, CountryService>();
 builder.Services.AddScoped<ICityService, CityService>();
 builder.Services.AddScoped<IImageService, ImageService>();
@@ -120,21 +108,18 @@ builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IEmailSender, EmailSender>();
 
-builder.Services.Configure<ApiBehaviorOptions>(options =>
-{
-    options.SuppressModelStateInvalidFilter = true;
-});
 builder.Services.AddValidatorsFromAssemblies(AppDomain.CurrentDomain.GetAssemblies());
-
-builder.Services.AddMvc(options =>
-{
-    options.Filters.Add<ValidationFilter>();
-});
+builder.Services.AddMvc(options => options.Filters.Add<ValidationFilter>());
 
 var app = builder.Build();
 
-
+// --- СЕРЕДОВИЩЕ ВИКОНАННЯ (MIDDLEWARE) ---
 app.UseCors("AllowFrontend");
+
+// ВАЖЛИВО: Ці два рядки запускають ваш index.html з wwwroot
+app.UseDefaultFiles(); 
+app.UseStaticFiles(); 
+
 app.UseSwagger();
 app.UseSwaggerUI();
 
@@ -143,87 +128,77 @@ app.UseAuthorization();
 
 app.MapControllers();
 
+// Налаштування папки зображень
 var dirImageName = builder.Configuration.GetValue<string>("DirImageName") ?? "duplo";
-var path = Path.Combine(Directory.GetCurrentDirectory(), dirImageName);
-Directory.CreateDirectory(dirImageName);
+var imagePath = Path.Combine(Directory.GetCurrentDirectory(), dirImageName);
+if (!Directory.Exists(imagePath)) Directory.CreateDirectory(imagePath);
 
 app.UseStaticFiles(new StaticFileOptions
 {
-    FileProvider = new PhysicalFileProvider(path),
+    FileProvider = new PhysicalFileProvider(imagePath),
     RequestPath = $"/{dirImageName}"
 });
 
+// Ініціалізація бази та SeedData
 using (var scoped = app.Services.CreateScope())
 {
     var services = scoped.ServiceProvider;
-    var myAppDbContext = services.GetRequiredService<AppDbTransferContext>();
-    var roleManager = services.GetRequiredService<RoleManager<RoleEntity>>();
-    var userManager = services.GetRequiredService<UserManager<UserEntity>>();
-    var emailSender = services.GetRequiredService<IEmailSender>();
-
-    // 🛑 ВИПРАВЛЕННЯ: Скидаємо базу даних, щоб уникнути конфлікту "relation tblCountries already exists"
-    // який був спричинений попереднім запуском EnsureCreatedAsync()
-    await myAppDbContext.Database.EnsureDeletedAsync();
-    myAppDbContext.Database.Migrate();
-
-    var roles = new[] { "User", "Admin" };
-    foreach (var role in roles)
+    try 
     {
-        if (!await roleManager.RoleExistsAsync(role))
+        var context = services.GetRequiredService<AppDbTransferContext>();
+        var roleManager = services.GetRequiredService<RoleManager<RoleEntity>>();
+        var userManager = services.GetRequiredService<UserManager<UserEntity>>();
+        var emailSender = services.GetRequiredService<IEmailSender>();
+
+        // Очищення та міграція (Для розробки)
+        await context.Database.EnsureDeletedAsync();
+        await context.Database.MigrateAsync();
+
+        // Створення ролей
+        var roles = new[] { "User", "Admin" };
+        foreach (var role in roles)
         {
-            await roleManager.CreateAsync(new RoleEntity { Name = role });
+            if (!await roleManager.RoleExistsAsync(role))
+                await roleManager.CreateAsync(new RoleEntity { Name = role });
         }
-    }
 
-    UserEntity adminUser = null;
-
-    if (!myAppDbContext.Users.Any(u => u.Email == "admin@gmail.com"))
-    {
-        adminUser = new UserEntity
+        // Створення Адміна
+        var adminEmail = "admin@gmail.com";
+        var adminUser = await userManager.FindByEmailAsync(adminEmail);
+        if (adminUser == null)
         {
-            UserName = "admin@gmail.com",
-            Email = "admin@gmail.com",
-            FirstName = "System",
-            LastName = "Administrator",
-            Image = "default.jpg",
-            EmailConfirmed = true
-        };
-        var result = await userManager.CreateAsync(adminUser, "Admin123");
-        if (result.Succeeded)
-        {
+            adminUser = new UserEntity
+            {
+                UserName = adminEmail,
+                Email = adminEmail,
+                FirstName = "System",
+                LastName = "Administrator",
+                Image = "default.jpg",
+                EmailConfirmed = true
+            };
+            await userManager.CreateAsync(adminUser, "Admin123!");
             await userManager.AddToRoleAsync(adminUser, "Admin");
         }
-    }
-    else
-    {
-        adminUser = await userManager.FindByEmailAsync("admin@gmail.com");
-    }
 
+        // SeedData
+        await SeedData.SeedAsync(context, userManager);
 
-    await SeedData.SeedAsync(myAppDbContext, userManager);
-
-    if (adminUser != null)
-    {
-        var subject = "Успішний запуск сайту TransferApp";
-        var body = $"<h1>Привіт, {adminUser.FirstName}!</h1><p>Сайт ASP.NET Core TransferApp успішно запущено в мережі.</p><p>Час запуску: {DateTime.Now}</p>";
-
-        try
+        // Email повідомлення
+        try 
         {
-            await emailSender.SendEmailAsync(adminUser.Email, subject, body);
-            Console.WriteLine($"[EMAIL] Повідомлення про запуск успішно надіслано на {adminUser.Email}");
+            await emailSender.SendEmailAsync(adminEmail, "Сайт запущено", $"Запуск успішний: {DateTime.Now}");
         }
-        catch (Exception ex)
-        {
-            Console.ForegroundColor = ConsoleColor.Red;
-            Console.WriteLine($"[EMAIL ERROR] Помилка при надсиланні email: {ex.Message}");
-            Console.ResetColor();
-        }
+        catch (Exception ex) { Console.WriteLine($"Email Error: {ex.Message}"); }
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"Critical Database Error: {ex.Message}");
     }
 }
 
 app.Run();
 
-
+// Клас SeedData
 public static class SeedData
 {
     public static async Task SeedAsync(AppDbTransferContext context, UserManager<UserEntity> userManager)
@@ -233,42 +208,52 @@ public static class SeedData
 
         if (!Directory.Exists(seedDirectory)) return;
 
-        if (!context.Set<CountryEntity>().Any())
+        // Countries
+        var countriesPath = Path.Combine(seedDirectory, "Countries.json");
+        if (File.Exists(countriesPath) && !context.Set<CountryEntity>().Any())
         {
-            var data = await File.ReadAllTextAsync(Path.Combine(seedDirectory, "Countries.json"));
+            var data = await File.ReadAllTextAsync(countriesPath);
             var items = JsonSerializer.Deserialize<List<CountryEntity>>(data, options);
             if (items != null) { context.Set<CountryEntity>().AddRange(items); await context.SaveChangesAsync(); }
         }
 
-        if (!context.Set<CityEntity>().Any())
+        // Cities
+        var citiesPath = Path.Combine(seedDirectory, "Cities.json");
+        if (File.Exists(citiesPath) && !context.Set<CityEntity>().Any())
         {
-            var data = await File.ReadAllTextAsync(Path.Combine(seedDirectory, "Cities.json"));
+            var data = await File.ReadAllTextAsync(citiesPath);
             var items = JsonSerializer.Deserialize<List<CityEntity>>(data, options);
             if (items != null) { context.Set<CityEntity>().AddRange(items); await context.SaveChangesAsync(); }
         }
 
-        if (!context.Set<TransportationStatusEntity>().Any())
+        // Statuses
+        var statusPath = Path.Combine(seedDirectory, "FlightStatuses.json");
+        if (File.Exists(statusPath) && !context.Set<TransportationStatusEntity>().Any())
         {
-            var data = await File.ReadAllTextAsync(Path.Combine(seedDirectory, "FlightStatuses.json"));
+            var data = await File.ReadAllTextAsync(statusPath);
             var items = JsonSerializer.Deserialize<List<TransportationStatusEntity>>(data, options);
             if (items != null) { context.Set<TransportationStatusEntity>().AddRange(items); await context.SaveChangesAsync(); }
         }
 
-        if (context.Users.Count() <= 1)
+        // Users
+        var usersPath = Path.Combine(seedDirectory, "Users.json");
+        if (File.Exists(usersPath) && context.Users.Count() <= 1)
         {
-            var data = await File.ReadAllTextAsync(Path.Combine(seedDirectory, "Users.json"));
+            var data = await File.ReadAllTextAsync(usersPath);
             var users = JsonSerializer.Deserialize<List<UserEntity>>(data, options);
             if (users != null)
             {
                 foreach (var user in users)
                 {
-                    user.UserName = user.Email;
-                    user.EmailConfirmed = true;
-                    await userManager.CreateAsync(user, "User123!");
-                    await userManager.AddToRoleAsync(user, "User");
+                    if (await userManager.FindByEmailAsync(user.Email) == null)
+                    {
+                        user.UserName = user.Email;
+                        user.EmailConfirmed = true;
+                        await userManager.CreateAsync(user, "User123!");
+                        await userManager.AddToRoleAsync(user, "User");
+                    }
                 }
             }
         }
-
     }
 }
