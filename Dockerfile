@@ -1,27 +1,25 @@
-# Використовуємо SDK 9.0 для збірки
+# Етап 1: Збірка
 FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
 WORKDIR /app
 
-# Копіюємо ВЕСЬ вміст репозиторію відразу
-# Це гарантує, що всі папки (Core, Domain, WebApiTransfer) будуть на місці
+# Копіюємо все (це надійніше для багатопроєктних рішень)
 COPY . .
 
-# Відновлюємо залежності та публікуємо проєкт
-# Ми вказуємо шлях до .csproj файлу відносно кореня
-RUN dotnet publish "WebApiTransfer/WebApiTransfer.csproj" -c Release -o /out /p:UseAppHost=false
+# Знаходимо будь-який файл .csproj у папці WebApiTransfer та публікуємо його
+RUN dotnet publish WebApiTransfer/*.csproj -c Release -o /out /p:UseAppHost=false
 
-# Створюємо фінальний образ
+# Етап 2: Запуск
 FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS final
 WORKDIR /app
 EXPOSE 8080
 ENV ASPNETCORE_URLS=http://+:8080
 
-# Копіюємо зібрані файли з етапу збірки
+# Копіюємо результат збірки
 COPY --from=build /out .
 
-# Копіюємо ваш index.html (він у корені) у папку wwwroot для фронтенду
-# Створюємо папку, якщо її немає, і копіюємо файл
+# Створюємо папку для фронтенду та копіюємо index.html
 RUN mkdir -p wwwroot
 COPY --from=build /app/index.html ./wwwroot/index.html
 
-ENTRYPOINT ["dotnet", "WebApiTransfer.dll"]
+# Автоматичний запуск: запускаємо файл, назва якого збігається з проектом
+ENTRYPOINT ["sh", "-c", "dotnet $(ls *.dll | head -n 1)"]
