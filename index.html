@@ -3,212 +3,144 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Вхід, Реєстрація та Профіль</title>
+    <title>WebApi Transfer - Auth</title>
     <style>
-        body { font-family: Arial, sans-serif; padding: 20px; }
-        .container { max-width: 400px; margin: 0 auto; border: 1px solid #ccc; padding: 20px; border-radius: 5px; }
-        h2 { text-align: center; }
-        label { display: block; margin-top: 10px; }
-        input[type="email"], input[type="password"], input[type="text"] { width: 100%; padding: 8px; margin-top: 5px; box-sizing: border-box; }
-        button { margin-top: 15px; padding: 10px 15px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        body { font-family: 'Segoe UI', sans-serif; background-color: #f4f7f6; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+        .container { max-width: 400px; width: 100%; border: 1px solid #ddd; padding: 30px; border-radius: 10px; background-color: white; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        h2 { text-align: center; color: #333; margin-top: 0; }
+        label { display: block; margin-top: 15px; font-weight: bold; }
+        input { width: 100%; padding: 10px; margin-top: 5px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
+        button { width: 100%; margin-top: 20px; padding: 12px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; font-weight: bold; }
         button:hover { background-color: #0056b3; }
-        .message { margin-top: 15px; padding: 10px; border-radius: 4px; background-color: #e9ecef; }
+        .secondary-btn { background-color: #6c757d; margin-top: 10px; }
+        .message { margin-top: 15px; padding: 12px; border-radius: 4px; font-size: 14px; text-align: center; }
         .hidden { display: none; }
+        .link-text { text-align: center; margin-top: 15px; font-size: 14px; }
+        .link-text a { color: #007bff; text-decoration: none; font-weight: bold; }
+        .btn-group { display: flex; gap: 10px; margin-bottom: 20px; }
     </style>
 </head>
 <body>
 
     <div class="container">
-        <div id="auth-buttons">
+        <div id="nav-btns" class="btn-group">
             <button onclick="showSection('login')">Вхід</button>
             <button onclick="showSection('register')">Реєстрація</button>
-            <button onclick="logout()" class="hidden" id="logout-btn">Вихід</button>
         </div>
-        <hr>
 
         <div id="message-area" class="message hidden"></div>
 
         <div id="login-section" class="section">
             <h2>Вхід</h2>
             <form id="login-form">
-                <label for="loginEmail">Email:</label>
+                <label>Email:</label>
                 <input type="email" id="loginEmail" required value="admin@gmail.com">
-                <label for="loginPassword">Пароль:</label>
+                <label>Пароль:</label>
                 <input type="password" id="loginPassword" required value="Admin123!">
                 <button type="submit">Увійти</button>
             </form>
+            <div class="link-text">
+                <a href="#" onclick="showSection('forgot')">Забули пароль?</a>
+            </div>
         </div>
 
         <div id="register-section" class="section hidden">
             <h2>Реєстрація</h2>
             <form id="register-form">
-                <label for="regEmail">Email:</label>
+                <label>Email:</label>
                 <input type="email" id="regEmail" required>
-                <label for="regFirstName">Ім'я:</label>
+                <label>Ім'я:</label>
                 <input type="text" id="regFirstName">
-                <label for="regPassword">Пароль (мін. 6):</label>
-                <input type="password" id="regPassword" required>
-                <label for="regConfirmPassword">Повторний пароль:</label>
+                <label>Пароль:</label>
+                <input type="password" id="regPassword" required minlength="6">
+                <label>Підтвердження:</label>
                 <input type="password" id="regConfirmPassword" required>
                 <button type="submit">Зареєструватися</button>
             </form>
         </div>
 
-        <div id="profile-section" class="section hidden">
-            <h2>Профіль Користувача</h2>
-            <p><strong>ID:</strong> <span id="profileId"></span></p>
-            <p><strong>Email:</strong> <span id="profileEmail"></span></p>
-            <p><strong>Ім'я:</strong> <span id="profileFirstName"></span></p>
-            <p><strong>Прізвище:</strong> <span id="profileLastName"></span></p>
-            <p><strong>Статус:</strong> <span id="profileStatus">Аутентифіковано</span></p>
+        <div id="forgot-section" class="section hidden">
+            <h2>Відновлення</h2>
+            <p style="text-align: center; font-size: 0.9em; color: #666;">Введіть пошту для отримання посилання.</p>
+            <form id="forgot-form">
+                <label>Ваш Email:</label>
+                <input type="email" id="forgotEmail" required>
+                <button type="submit">Надіслати лист</button>
+            </form>
+            <button class="secondary-btn" onclick="showSection('login')">Назад</button>
+        </div>
+
+        <div id="reset-section" class="section hidden">
+            <h2>Новий пароль</h2>
+            <form id="reset-form">
+                <input type="hidden" id="resetToken">
+                <label>Email:</label>
+                <input type="email" id="resetEmailDisplay" readonly>
+                <label>Новий пароль:</label>
+                <input type="password" id="newPassword" required minlength="6">
+                <button type="submit">Оновити пароль</button>
+            </form>
         </div>
     </div>
 
     <script>
-        // ВИПРАВЛЕНО: Використовуємо відносний шлях. 
-        // Це автоматично підставить домен Koyeb та HTTPS протокол.
         const API_URL = window.location.origin + '/api/Account/';
-
-        // --- ДОПОМІЖНІ ФУНКЦІЇ ---
-
-        function setToken(token) {
-            localStorage.setItem('authToken', token);
-            showSection('profile');
-        }
-
-        function getToken() {
-            return localStorage.getItem('authToken');
-        }
 
         function showMessage(text, isError = false) {
             const area = document.getElementById('message-area');
             area.textContent = text;
             area.style.backgroundColor = isError ? '#f8d7da' : '#d4edda';
-            area.style.color = isError ? '#721c24' : '#155724';
             area.classList.remove('hidden');
         }
 
-        function hideMessage() {
-            document.getElementById('message-area').classList.add('hidden');
-        }
-
-        function showSection(sectionId) {
+        function showSection(id) {
             document.querySelectorAll('.section').forEach(s => s.classList.add('hidden'));
-            document.getElementById(`${sectionId}-section`).classList.remove('hidden');
-            hideMessage();
-
-            const isLoggedIn = !!getToken();
-            document.getElementById('logout-btn').classList.toggle('hidden', !isLoggedIn);
-
-            if (sectionId === 'profile' && isLoggedIn) {
-                fetchProfile();
-            } else if (!isLoggedIn && sectionId === 'profile') {
-                showSection('login');
-                showMessage("Секція профілю доступна лише після входу.", true);
-            }
+            document.getElementById(id + '-section').classList.remove('hidden');
         }
 
-        // --- ФУНКЦІЇ ВЗАЄМОДІЇ З API ---
-
-        async function apiCall(endpoint, method, body = null, requireAuth = false) {
-            const token = getToken();
-            const headers = { 'Content-Type': 'application/json' };
-
-            if (requireAuth) {
-                if (!token) {
-                    showMessage("Потрібна авторизація!", true);
-                    throw new Error("Unauthorized");
-                }
-                headers['Authorization'] = `Bearer ${token}`;
-            }
-
+        // Запит на відновлення
+        document.getElementById('forgot-form').onsubmit = async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('forgotEmail').value;
             try {
-                const response = await fetch(API_URL + endpoint, {
-                    method: method,
-                    headers: headers,
-                    body: body ? JSON.stringify(body) : null
+                const res = await fetch(API_URL + 'ForgotPassword', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(email)
                 });
+                const data = await res.json();
+                showMessage(data.message);
+            } catch (err) { showMessage("Помилка відправки", true); }
+        };
 
-                if (response.ok) {
-                    return response.json();
-                } else {
-                    let errorMessage = response.statusText;
-                    try {
-                        const errorData = await response.json();
-                        errorMessage = errorData.error || errorData.message || response.statusText;
-                    } catch (e) {
-                        errorMessage = `Помилка сервера: ${response.status}`;
-                    }
-                    showMessage(`Помилка: ${errorMessage}`, true);
-                    throw new Error(errorMessage);
-                }
-            } catch (err) {
-                showMessage("Не вдалося з'єднатися з сервером. Перевірте HTTPS.", true);
-                throw err;
-            }
-        }
-
-        // 1. ЛОГІКА ВХОДУ
-        document.getElementById('login-form').addEventListener('submit', async (e) => {
+        // Встановлення нового пароля
+        document.getElementById('reset-form').onsubmit = async (e) => {
             e.preventDefault();
-            const email = document.getElementById('loginEmail').value;
-            const password = document.getElementById('loginPassword').value;
-
+            const body = {
+                email: document.getElementById('resetEmailDisplay').value,
+                token: document.getElementById('resetToken').value,
+                newPassword: document.getElementById('newPassword').value
+            };
             try {
-                const data = await apiCall('Login', 'POST', { email, password });
-                if (data.token) {
-                    setToken(data.token);
-                    showMessage("Успішний вхід!");
+                const res = await fetch(API_URL + 'ResetPassword', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                if (res.ok) {
+                    showMessage("Успішно! Увійдіть з новим паролем.");
+                    setTimeout(() => showSection('login'), 2000);
                 }
-            } catch (error) {
-                console.error("Login failed:", error);
-            }
-        });
+            } catch (err) { showMessage("Помилка", true); }
+        };
 
-        // 2. ЛОГІКА РЕЄСТРАЦІЇ
-        document.getElementById('register-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const email = document.getElementById('regEmail').value;
-            const password = document.getElementById('regPassword').value;
-            const confirmPassword = document.getElementById('regConfirmPassword').value;
-            const firstName = document.getElementById('regFirstName').value;
-
-            try {
-                const data = await apiCall('Register', 'POST', { email, password, confirmPassword, firstName });
-                showMessage(data.message || "Реєстрація успішна! Тепер увійдіть.");
-                showSection('login');
-            } catch (error) {
-                console.error("Registration failed:", error);
-            }
-        });
-
-        // 3. ЛОГІКА ОТРИМАННЯ ПРОФІЛЮ
-        async function fetchProfile() {
-            try {
-                const profile = await apiCall('GetProfile', 'GET', null, true);
-                document.getElementById('profileId').textContent = profile.id;
-                document.getElementById('profileEmail').textContent = profile.email;
-                document.getElementById('profileFirstName').textContent = profile.firstName || "Не вказано";
-                document.getElementById('profileLastName').textContent = profile.lastName || "Не вказано";
-            } catch (error) {
-                if (error.message.includes("Unauthorized") || error.message.includes("401")) {
-                    logout();
-                }
-                console.error("Fetch profile failed:", error);
-            }
-        }
-
-        function logout() {
-            localStorage.removeItem('authToken');
-            showMessage("Ви вийшли з системи.");
-            showSection('login');
-        }
-
+        // Перевірка URL на наявність токена при завантаженні
         window.onload = () => {
-            if (getToken()) {
-                showSection('profile');
-            } else {
-                showSection('login');
+            const params = new URLSearchParams(window.location.search);
+            if (params.has('token') && params.has('email')) {
+                showSection('reset');
+                document.getElementById('resetToken').value = params.get('token');
+                document.getElementById('resetEmailDisplay').value = params.get('email');
             }
         };
     </script>
