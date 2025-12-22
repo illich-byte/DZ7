@@ -2,34 +2,29 @@ using Core.Interfaces;
 using Core.Models.Account;
 using Core.Services;
 using Domain;
-using Domain.Entities;
 using Domain.Entities.Idenity;
 using Domain.Entities.Location;
-using FluentValidation;
+using Domain.Entities;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
-using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.FileProviders;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using System.Text;
 using System.Text.Json;
-using WebApiTransfer.Filters;
 
-// Виправлення для Postgres (UTC)
+// Виправлення для роботи з часом у Postgres
 AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Налаштування БД
+// 1. НАЛАШТУВАННЯ БАЗИ ДАНИХ
 builder.Services.AddDbContext<AppDbTransferContext>(options =>
 {
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection"));
-    options.ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning));
 });
 
-// Налаштування Identity
+// 2. IDENTITY (Користувачі та Ролі)
 builder.Services.AddIdentity<UserEntity, RoleEntity>(options =>
 {
     options.Password.RequireDigit = false;
@@ -37,11 +32,12 @@ builder.Services.AddIdentity<UserEntity, RoleEntity>(options =>
     options.Password.RequireUppercase = false;
     options.Password.RequiredLength = 6;
     options.Password.RequireNonAlphanumeric = false;
+    options.User.RequireUniqueEmail = true;
 })
 .AddEntityFrameworkStores<AppDbTransferContext>()
-.AddDefaultTokenProviders();
+.AddDefaultTokenProviders(); // НЕОБХІДНО для генерації токенів скидання пароля
 
-// Налаштування JWT
+// 3. JWT АУТЕНТИФІКАЦІЯ
 builder.Services.AddAuthentication(options =>
 {
     options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
@@ -49,76 +45,52 @@ builder.Services.AddAuthentication(options =>
 })
 .AddJwtBearer(options =>
 {
-    options.RequireHttpsMetadata = false;
-    options.SaveToken = true;
     options.TokenValidationParameters = new TokenValidationParameters
     {
         ValidateIssuer = false,
         ValidateAudience = false,
-        ValidateIssuerSigningKey = true,
         ValidateLifetime = true,
-        ClockSkew = TimeSpan.Zero,
+        ValidateIssuerSigningKey = true,
         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"] ?? "DefaultSecretKey1234567890"))
     };
 });
 
-builder.Services.AddHttpContextAccessor();
-builder.Services.AddControllers();
-
-// Swagger
-var assemblyName = typeof(LoginModel).Assembly.GetName().Name;
-builder.Services.AddSwaggerGen(opt =>
-{
-    var fileDoc = $"{assemblyName}.xml";
-    var filePath = Path.Combine(AppContext.BaseDirectory, fileDoc);
-    if (File.Exists(filePath)) opt.IncludeXmlComments(filePath);
-
-    opt.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
-    {
-        Description = "JWT Authorization header using the Bearer scheme.",
-        Name = "Authorization",
-        In = ParameterLocation.Header,
-        Type = SecuritySchemeType.Http,
-        Scheme = "bearer"
-    });
-
-    opt.AddSecurityRequirement(new OpenApiSecurityRequirement
-    {
-        {
-            new OpenApiSecurityScheme { Reference = new OpenApiReference { Type=ReferenceType.SecurityScheme, Id="Bearer" } },
-            new string[]{}
-        }
-    });
-});
-
-// CORS
-builder.Services.AddCors(options =>
-{
-    options.AddPolicy("AllowFrontend",
-        policy => policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader());
-});
-
-// Services
-builder.Services.AddAutoMapper(AppDomain.CurrentDomain.GetAssemblies());
-builder.Services.AddScoped<ICountryService, CountryService>();
-builder.Services.AddScoped<ICityService, CityService>();
-builder.Services.AddScoped<IImageService, ImageService>();
+// 4. РЕЄСТРАЦІЯ СЕРВІСІВ (Dependency Injection)
+builder.Services.AddScoped<IEmailSender, EmailSender>();
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IUserService, UserService>();
-builder.Services.AddScoped<IEmailSender, EmailSender>();
+builder.Services.AddScoped<ICityService, CityService>();
+builder.Services.AddScoped<ICountryService, CountryService>();
 
-builder.Services.AddValidatorsFromAssemblies(AppDomain.CurrentDomain.GetAssemblies());
-builder.Services.AddMvc(options => options.Filters.Add<ValidationFilter>());
+builder.Services.AddControllers();
+builder.Services.AddEndpointsApiExplorer();
+
+// SWAGGER З ПІДТРИМКОЮ JWT
+builder.Services.AddSwaggerGen(c =>
+{
+    c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        Description = "Введіть JWT токен у форматі: Bearer {token}",
+        Name = "Authorization",
+        In = ParameterLocation.Header,
+        Type = SecuritySchemeType.ApiKey,
+        Scheme = "Bearer"
+    });
+    c.AddSecurityRequirement(new OpenApiSecurityRequirement
+    {
+        { new OpenApiSecurityScheme { Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" } }, new string[] { } }
+    });
+});
+
+builder.Services.AddCors(opt => opt.AddPolicy("AllowAll", p => p.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader()));
 
 var app = builder.Build();
 
-// --- СЕРЕДОВИЩЕ ВИКОНАННЯ (MIDDLEWARE) ---
-app.UseCors("AllowFrontend");
-
-// ВАЖЛИВО: Ці два рядки запускають ваш index.html з wwwroot
-app.UseDefaultFiles(); 
-app.UseStaticFiles(); 
+// --- MIDDLEWARE ---
+app.UseCors("AllowAll");
+app.UseDefaultFiles(); // Дозволяє запуск index.html
+app.UseStaticFiles();
 
 app.UseSwagger();
 app.UseSwaggerUI();
@@ -128,124 +100,80 @@ app.UseAuthorization();
 
 app.MapControllers();
 
-// Налаштування папки зображень
-var dirImageName = builder.Configuration.GetValue<string>("DirImageName") ?? "duplo";
-var imagePath = Path.Combine(Directory.GetCurrentDirectory(), dirImageName);
-if (!Directory.Exists(imagePath)) Directory.CreateDirectory(imagePath);
-
-app.UseStaticFiles(new StaticFileOptions
+// 5. ІНІЦІАЛІЗАЦІЯ БАЗИ (MIGRATIONS & SEED DATA)
+using (var scope = app.Services.CreateScope())
 {
-    FileProvider = new PhysicalFileProvider(imagePath),
-    RequestPath = $"/{dirImageName}"
-});
-
-// Ініціалізація бази та SeedData
-using (var scoped = app.Services.CreateScope())
-{
-    var services = scoped.ServiceProvider;
-    try 
+    var services = scope.ServiceProvider;
+    try
     {
         var context = services.GetRequiredService<AppDbTransferContext>();
-        var roleManager = services.GetRequiredService<RoleManager<RoleEntity>>();
         var userManager = services.GetRequiredService<UserManager<UserEntity>>();
-        var emailSender = services.GetRequiredService<IEmailSender>();
+        var roleManager = services.GetRequiredService<RoleManager<RoleEntity>>();
 
-        // Очищення та міграція (Для розробки)
-        await context.Database.EnsureDeletedAsync();
+        // Застосування міграцій (Database.EnsureDeleted() ПРИБРАНО для збереження даних)
         await context.Database.MigrateAsync();
 
-        // Створення ролей
-        var roles = new[] { "User", "Admin" };
-        foreach (var role in roles)
-        {
-            if (!await roleManager.RoleExistsAsync(role))
-                await roleManager.CreateAsync(new RoleEntity { Name = role });
-        }
+        // Початкове створення ролей
+        if (!await roleManager.RoleExistsAsync("Admin")) await roleManager.CreateAsync(new RoleEntity { Name = "Admin" });
+        if (!await roleManager.RoleExistsAsync("User")) await roleManager.CreateAsync(new RoleEntity { Name = "User" });
 
-        // Створення Адміна
+        // Створення адміна
         var adminEmail = "admin@gmail.com";
-        var adminUser = await userManager.FindByEmailAsync(adminEmail);
-        if (adminUser == null)
+        if (await userManager.FindByEmailAsync(adminEmail) == null)
         {
-            adminUser = new UserEntity
+            var admin = new UserEntity
             {
                 UserName = adminEmail,
                 Email = adminEmail,
                 FirstName = "System",
-                LastName = "Administrator",
-                Image = "default.jpg",
+                LastName = "Admin",
                 EmailConfirmed = true
             };
-            await userManager.CreateAsync(adminUser, "Admin123!");
-            await userManager.AddToRoleAsync(adminUser, "Admin");
+            await userManager.CreateAsync(admin, "Admin123!");
+            await userManager.AddToRoleAsync(admin, "Admin");
         }
 
-        // SeedData
+        // Завантаження даних з JSON
         await SeedData.SeedAsync(context, userManager);
-
-        // Email повідомлення
-        try 
-        {
-            await emailSender.SendEmailAsync(adminEmail, "Сайт запущено", $"Запуск успішний: {DateTime.Now}");
-        }
-        catch (Exception ex) { Console.WriteLine($"Email Error: {ex.Message}"); }
     }
     catch (Exception ex)
     {
-        Console.WriteLine($"Critical Database Error: {ex.Message}");
+        Console.WriteLine($"Помилка при ініціалізації БД: {ex.Message}");
     }
 }
 
 app.Run();
 
-// Клас SeedData
+// --- КЛАС SEED DATA ---
 public static class SeedData
 {
     public static async Task SeedAsync(AppDbTransferContext context, UserManager<UserEntity> userManager)
     {
         var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-        var seedDirectory = Path.Combine(Directory.GetCurrentDirectory(), "SeedData");
+        var rootPath = Path.Combine(Directory.GetCurrentDirectory(), "SeedData");
 
-        if (!Directory.Exists(seedDirectory)) return;
+        if (!Directory.Exists(rootPath)) return;
 
-        // Countries
-        var countriesPath = Path.Combine(seedDirectory, "Countries.json");
+        // Приклад наповнення Країн
+        var countriesPath = Path.Combine(rootPath, "Countries.json");
         if (File.Exists(countriesPath) && !context.Set<CountryEntity>().Any())
         {
-            var data = await File.ReadAllTextAsync(countriesPath);
-            var items = JsonSerializer.Deserialize<List<CountryEntity>>(data, options);
-            if (items != null) { context.Set<CountryEntity>().AddRange(items); await context.SaveChangesAsync(); }
+            var json = await File.ReadAllTextAsync(countriesPath);
+            var countries = JsonSerializer.Deserialize<List<CountryEntity>>(json, options);
+            if (countries != null) { context.AddRange(countries); await context.SaveChangesAsync(); }
         }
 
-        // Cities
-        var citiesPath = Path.Combine(seedDirectory, "Cities.json");
-        if (File.Exists(citiesPath) && !context.Set<CityEntity>().Any())
-        {
-            var data = await File.ReadAllTextAsync(citiesPath);
-            var items = JsonSerializer.Deserialize<List<CityEntity>>(data, options);
-            if (items != null) { context.Set<CityEntity>().AddRange(items); await context.SaveChangesAsync(); }
-        }
-
-        // Statuses
-        var statusPath = Path.Combine(seedDirectory, "FlightStatuses.json");
-        if (File.Exists(statusPath) && !context.Set<TransportationStatusEntity>().Any())
-        {
-            var data = await File.ReadAllTextAsync(statusPath);
-            var items = JsonSerializer.Deserialize<List<TransportationStatusEntity>>(data, options);
-            if (items != null) { context.Set<TransportationStatusEntity>().AddRange(items); await context.SaveChangesAsync(); }
-        }
-
-        // Users
-        var usersPath = Path.Combine(seedDirectory, "Users.json");
+        // Приклад наповнення Користувачів
+        var usersPath = Path.Combine(rootPath, "Users.json");
         if (File.Exists(usersPath) && context.Users.Count() <= 1)
         {
-            var data = await File.ReadAllTextAsync(usersPath);
-            var users = JsonSerializer.Deserialize<List<UserEntity>>(data, options);
+            var json = await File.ReadAllTextAsync(usersPath);
+            var users = JsonSerializer.Deserialize<List<UserEntity>>(json, options);
             if (users != null)
             {
                 foreach (var user in users)
                 {
-                    if (await userManager.FindByEmailAsync(user.Email) == null)
+                    if (await userManager.FindByEmailAsync(user.Email!) == null)
                     {
                         user.UserName = user.Email;
                         user.EmailConfirmed = true;
