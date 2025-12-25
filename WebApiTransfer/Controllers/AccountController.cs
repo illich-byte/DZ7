@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace WebApiTransfer.Controllers;
 
-// Маршрут налаштований так, щоб звертатися до методів за схемою: api/Account/НазваМетоду
+// Налаштування маршруту: api/Account/[назва_методу]
 [Route("api/[controller]/[action]")]
 [ApiController]
 public class AccountController(
@@ -15,7 +15,7 @@ public class AccountController(
     IUserService userService,
     IJwtTokenService jwtTokenService,
     IAuthService authService,
-    IEmailSender emailSender) : ControllerBase 
+    IEmailSender emailSender) : ControllerBase
 {
     /// <summary>
     /// Вхід у систему
@@ -53,10 +53,10 @@ public class AccountController(
     }
 
     /// <summary>
-    /// Отримання профілю (вимагає авторизації)
+    /// Отримання профілю поточного користувача
     /// </summary>
     [HttpGet]
-    [Authorize] 
+    [Authorize]
     public async Task<IActionResult> GetProfile()
     {
         var model = await userService.GetUserProfileAsync();
@@ -64,52 +64,59 @@ public class AccountController(
     }
 
     /// <summary>
-    /// Запит на відновлення пароля (надсилає лист з токеном)
+    /// ПОШУК КОРИСТУВАЧІВ (Завдання: Пошук)
+    /// </summary>
+    /// <param name="query">Рядок для пошуку (Email, Ім'я або Прізвище)</param>
+    [HttpGet]
+    [Authorize]
+    public async Task<IActionResult> Search([FromQuery] string query)
+    {
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return BadRequest(new { Message = "Пошуковий запит не може бути порожнім." });
+        }
+
+        var results = await userService.SearchUsersAsync(query);
+        return Ok(results);
+    }
+
+    /// <summary>
+    /// Запит на відновлення пароля
     /// </summary>
     [HttpPost]
     public async Task<IActionResult> ForgotPassword([FromBody] string email)
     {
         var user = await userManager.FindByEmailAsync(email);
-        
-        // З міркувань безпеки завжди повертаємо OK
-        if (user == null) 
+
+        if (user == null)
         {
             return Ok(new { Message = "Якщо такий Email існує, лист для відновлення надіслано." });
         }
 
-        // Генеруємо токен
         var token = await userManager.GeneratePasswordResetTokenAsync(user);
-
-        // Формуємо посилання на ваш фронтенд (Koyeb)
         var callbackUrl = $"{Request.Scheme}://{Request.Host}?email={user.Email}&token={Uri.EscapeDataString(token)}";
 
         var messageBody = $@"
-            <div style='font-family: Arial; padding: 20px; border: 1px solid #eee;'>
+            <div style='font-family: Arial; padding: 20px;'>
                 <h2>Відновлення доступу</h2>
-                <p>Ви отримали цей лист, бо зробили запит на зміну пароля.</p>
-                <p>Натисніть на кнопку нижче, щоб встановити новий пароль:</p>
+                <p>Натисніть на кнопку нижче для зміни пароля:</p>
                 <a href='{callbackUrl}' style='display: inline-block; padding: 10px 20px; background-color: #007bff; color: white; text-decoration: none; border-radius: 5px;'>Змінити пароль</a>
-                <p style='color: #666; font-size: 0.8em; margin-top: 20px;'>Якщо ви цього не робили, просто видаліть цей лист.</p>
             </div>";
 
         await emailSender.SendEmailAsync(user.Email!, "Відновлення пароля", messageBody);
 
-        return Ok(new { Message = "Лист для відновлення надіслано успішно." });
+        return Ok(new { Message = "Лист надіслано успішно." });
     }
 
     /// <summary>
-    /// Встановлення нового пароля за допомогою токена
+    /// Скидання пароля за токеном
     /// </summary>
     [HttpPost]
     public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordModel model)
     {
         var user = await userManager.FindByEmailAsync(model.Email);
-        if (user == null)
-        {
-            return BadRequest(new { Message = "Користувача не знайдено." });
-        }
+        if (user == null) return BadRequest(new { Message = "Користувача не знайдено." });
 
-        // Перевірка токена та зміна пароля
         var result = await userManager.ResetPasswordAsync(user, model.Token, model.NewPassword);
 
         if (result.Succeeded)
@@ -117,7 +124,6 @@ public class AccountController(
             return Ok(new { Message = "Пароль успішно оновлено!" });
         }
 
-        var errors = result.Errors.Select(e => e.Description);
-        return BadRequest(new { Message = "Помилка при зміні пароля", Errors = errors });
+        return BadRequest(new { Message = "Помилка", Errors = result.Errors.Select(e => e.Description) });
     }
 }
